@@ -1,0 +1,53 @@
+#!/bin/sh
+# This script depends on the package 'pulseaudio-module-jack', sometimes
+# called 'pulseaudio-jack' (for example on Arch Linux or Alpine Linux).
+# 
+# This is a wrapper script around sonic-pi. All options passed to this script
+# will be passed on to sonic-pi. This script launches a dummy JACK server
+# and wires up sonic-pi's audio output to PulseAudio. This is supposed
+# to avoid common issues that arise from running JACK and PulseAudio
+# on the same sound card while also keeping the configuration effort minimal.
+# Additionaly, this allows to hear the sound of sonic-pi through any
+# bluetooth speaker or headset if they are set up to work with PulseAudio.
+# 
+# Keep in mind that routing sound through PulseAudio is an extra step
+# and that PulseAudio resamples loopback devices. See:
+#https://www.freedesktop.org/wiki/Software/PulseAudio/Documentation/User/Modules/#module-loopback
+# As more computing needs to be done,
+# audio issues can be possible depending on the hardware at hand.
+
+cleanup() {
+  [ -n "$MODULE_ID_LOOPBACK" ] && pactl unload-module "$MODULE_ID_LOOPBACK"
+  [ -n "$MODULE_ID_JACK_SRC" ] && pactl unload-module "$MODULE_ID_JACK_SRC"
+  kill $PID_JACK
+}
+trap 'cleanup; trap - EXIT; exit' TERM EXIT INT HUP
+
+# Launch JACK on a dummy device so it does not occupy any sound card
+jackd -ddummy -r48000 -p1024 &
+PID_JACK=$!
+# Uncomment this line if sonic-pi can't connect to the jack server
+#sleep 1
+sonic-pi "$@" &
+PID_SONICPI=$!
+
+# Wait while jack server does not list SuperCollider
+while [ -z "`jack_lsp SuperCollider`" ]; do
+  sleep 1
+  # Exit if sonic-pi isn't still running at this point
+  #cleanup is done via the exit trap
+  kill -0 "$PID_SONICPI" || exit
+done
+
+# Connect JACK with PulseAudio and loop it back to play back sound output
+CLIENT_NAME="JACK to PulseAudio"
+MODULE_ID_JACK_SRC=`pactl load-module module-jack-source \
+                        connect=0 client_name=\'"$CLIENT_NAME"\'` &&
+MODULE_ID_LOOPBACK=`pactl load-module module-loopback source=jack_in` &&
+# On the JACK server, connect sonic-pi's ouput with the PulseAudio bridge
+jack_connect SuperCollider:out_1 "$CLIENT_NAME":front-left &&
+jack_connect SuperCollider:out_2 "$CLIENT_NAME":front-right
+
+# Wait until sonic-pi exits
+wait $PID_SONICPI
+#cleanup is done via the exit trap

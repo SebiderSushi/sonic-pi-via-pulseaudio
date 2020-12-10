@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Sonic Pi via PulseAudio
+Comment=Live Coding Music Synth routed through PulseAudio
+Exec=sonic-pi-via-pulseaudio
+Icon=sonic-pi
+Terminal=false
+StartupNotify=false
+Categories=AudioVideo;Audio;
+Path=
